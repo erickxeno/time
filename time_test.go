@@ -85,7 +85,7 @@ func TestTime(t *testing.T) {
 	})
 }
 
-func TestTimer2(t *testing.T) {
+func TestTimeDifference(t *testing.T) {
 	now := Current()
 	osTime.Sleep(10 * osTime.Millisecond)
 	fmt.Println(Current())
@@ -98,6 +98,29 @@ func TestTimer2(t *testing.T) {
 	assert.True(t, Current().Sub(now.Time) > osTime.Millisecond)
 }
 
+func TestTimePrecision(t *testing.T) {
+	PatchConvey("test time precision", t, func() {
+		ti := Current()
+		t.Logf("%s", (ti.String()))
+		SetTimePrecision(TimePrecisionSecond)
+		osTime.Sleep(1 * osTime.Second)
+		ti = Current()
+		t.Logf("%s", ti.String())
+
+		SetTimePrecision(TimePrecisionMillisecond)
+		osTime.Sleep(1 * osTime.Second)
+		ti = Current()
+		t.Logf("%s", ti.String())
+
+		SetTimePrecision(TimePrecisionMicrosecond)
+		osTime.Sleep(1 * osTime.Second)
+		ti = Current()
+		t.Logf("%s", ti.String())
+		osTime.Sleep(1 * osTime.Microsecond)
+		ti = Current()
+		t.Logf("%s", ti.String())
+	})
+}
 func BenchmarkTimer(b *testing.B) {
 	b.ReportAllocs()
 	b.Run("ticker(default 1ms ticker)", func(b *testing.B) {

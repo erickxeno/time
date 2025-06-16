@@ -34,6 +34,28 @@ func SetClock(t osTime.Duration) {
 	atomic.StoreInt64((*int64)(&clock), int64(t))
 }
 
+type TimePrecision int
+
+const (
+	TimePrecisionSecond TimePrecision = iota
+	TimePrecisionMillisecond
+	TimePrecisionMicrosecond
+)
+
+var (
+	timePrecision = TimePrecisionMillisecond // default time precision is millisecond
+)
+
+func SetTimePrecision(tm TimePrecision) {
+	if tm == TimePrecisionMicrosecond {
+		localC := atomic.LoadInt64((*int64)(&clock))
+		if localC > int64(osTime.Microsecond) {
+			SetClock(osTime.Microsecond * 1)
+		}
+	}
+	atomic.StoreInt32((*int32)(unsafe.Pointer(&timePrecision)), int32(tm))
+}
+
 func Current() Time {
 	return *(*Time)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&currentTime))))
 }
@@ -73,10 +95,18 @@ func refreshTask() {
 
 func refreshCurrentTime(cur osTime.Time) {
 	curT := Time{
-		Time:        cur,
-		serialBytes: make([]byte, 0, 28),
+		Time: cur,
 	}
-	curT.serialBytes = timeData(cur, curT.serialBytes)
+	precision := atomic.LoadInt32((*int32)(unsafe.Pointer(&timePrecision)))
+	switch precision {
+	case int32(TimePrecisionSecond):
+		curT.serialBytes = make([]byte, 0, 24)
+	case int32(TimePrecisionMillisecond):
+		curT.serialBytes = make([]byte, 0, 28)
+	case int32(TimePrecisionMicrosecond):
+		curT.serialBytes = make([]byte, 0, 31)
+	}
+	curT.serialBytes = timeData(cur, curT.serialBytes, TimePrecision(precision))
 	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&currentTime)), unsafe.Pointer(&curT))
 }
 
@@ -89,7 +119,7 @@ func init() {
 	go refreshTask()
 }
 
-func timeData(t osTime.Time, c []byte) []byte {
+func timeData(t osTime.Time, c []byte, precision TimePrecision) []byte {
 	year, month, day := t.Date()
 	// year
 	c = append(c, byte(year/1000)+zeroAscii)
@@ -118,13 +148,25 @@ func timeData(t osTime.Time, c []byte) []byte {
 	// min
 	c = append(c, byte(sec/10)+zeroAscii)
 	c = append(c, byte(sec%10)+zeroAscii)
-	c = append(c, ',')
 
-	ms := t.Nanosecond() / 1e6
-	// millisecond
-	c = append(c, byte(ms/100)+zeroAscii)
-	c = append(c, byte(ms%100/10)+zeroAscii)
-	c = append(c, byte(ms%10)+zeroAscii)
+	switch precision {
+	case TimePrecisionSecond:
+	case TimePrecisionMillisecond:
+		c = append(c, ',')
+		ms := t.Nanosecond() / 1e6
+		c = append(c, byte(ms/100)+zeroAscii)
+		c = append(c, byte(ms%100/10)+zeroAscii)
+		c = append(c, byte(ms%10)+zeroAscii)
+	case TimePrecisionMicrosecond:
+		c = append(c, ',')
+		us := t.Nanosecond() / 1e3
+		c = append(c, byte(us/100000)+zeroAscii)
+		c = append(c, byte(us%100000/10000)+zeroAscii)
+		c = append(c, byte(us%10000/1000)+zeroAscii)
+		c = append(c, byte(us%1000/100)+zeroAscii)
+		c = append(c, byte(us%100/10)+zeroAscii)
+		c = append(c, byte(us%10)+zeroAscii)
+	}
 
 	// zone
 	if len(zone) != 0 {
